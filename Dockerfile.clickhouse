@@ -1,0 +1,13 @@
+FROM clickhouse/clickhouse-server:latest
+
+# Install envsubst (part of gettext-base)
+USER root
+RUN apk add --no-cache gettext
+
+USER clickhouse
+
+COPY clickhouse/clickhouse_config/ /etc/clickhouse-server/config.d/
+
+CMD envsubst < /etc/clickhouse-server/config.d/storage.xml \
+    > /etc/clickhouse-server/config.d/storage.xml && \
+    /entrypoint.sh

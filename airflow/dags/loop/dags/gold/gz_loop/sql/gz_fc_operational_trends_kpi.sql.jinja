@@ -1,0 +1,153 @@
+INSERT INTO {{ target_db }}.{{ target_table }}
+(
+    log_date,
+    region,
+    state,
+    city,
+    fc_code,
+    fc_name,
+    hd_committed_capacity,
+    hd_planned_capacity,
+    hd_consumed_capacity,
+    pup_committed_capacity,
+    pup_planned_capacity,
+    pup_consumed_capacity,
+    hd_delivered_shipment_volume,
+    pup_delivered_shipment_volume,
+    overall_delivered_shipment_volume,
+    hd_on_time,
+    pup_on_time,
+    overall_on_time,
+    hd_adj_ds
+)
+WITH
+{% if log_dates is defined and log_dates %}
+log_dates_filter AS (
+    SELECT toDate(d) AS log_date
+    FROM (
+        SELECT arrayJoin([
+            {% for d in log_dates %}
+            '{{ d }}'{% if not loop.last %}, {% endif %}
+            {% endfor %}
+        ]) AS d
+    )
+),
+log_months_filter AS (
+    SELECT DISTINCT toStartOfMonth(log_date) AS month_year
+    FROM log_dates_filter
+),
+{% endif %}
+fc_productivity AS (
+    SELECT
+        log_date,
+        fc_code,
+        fc_name,
+        argMax(hd_delivered_shipments_volume, created_ts) AS hd_delivered_shipments_volume,
+        argMax(pup_delivered_shipments_volume, created_ts) AS pup_delivered_shipments_volume,
+        argMax(hd_consumed_capacity, created_ts) AS hd_consumed_capacity,
+        argMax(pup_consumed_capacity, created_ts) AS pup_consumed_capacity,
+        argMax(hd_set_capacity, created_ts) AS hd_set_capacity,
+        argMax(pup_set_capacity, created_ts) AS pup_set_capacity,
+        argMax(hd_on_time_delivered_shipments, created_ts) AS hd_on_time_delivered_shipments,
+        argMax(pup_on_time, created_ts) AS pup_on_time,
+        argMax(total_hd_orders_count, created_ts) AS total_hd_orders_count,
+        argMax(total_pup_orders_count, created_ts) AS total_pup_orders_count,
+        argMax(hd_adj_ds, created_ts) AS hd_adj_ds
+    FROM
+        {{ source_db }}.{{ source_table_fc_productivity }}
+    {% if log_dates is defined and log_dates %}
+    WHERE log_date IN (SELECT log_date FROM log_dates_filter)
+    {% endif %}
+    GROUP BY
+        log_date, fc_code, fc_name
+),
+resource_productivity_hd AS (
+    SELECT  
+        fc_code,
+        month_year,
+        argMax(da_full_time, created_ts) AS da_full_time,
+        argMax(da_part_time, created_ts) AS da_part_time,
+        argMax(shoppers_full_time, created_ts) AS shoppers_full_time,
+        argMax(shoppers_part_time, created_ts) AS shoppers_part_time,
+        argMax(refiller_full_time, created_ts) AS refiller_full_time,
+        argMax(refiller_part_time, created_ts) AS refiller_part_time,
+        argMax(last_mile_loader_full_time, created_ts) AS last_mile_loader_full_time,
+        argMax(last_mile_loader_part_time, created_ts) AS last_mile_loader_part_time,
+        argMax(vehicle, created_ts) AS vehicle,
+        argMax(dcd, created_ts) AS dcd
+    FROM
+        {{ source_db }}.{{ source_table_resource_productivity_pc }}
+    WHERE
+        category_id = 3 AND label_id = 7
+        {% if log_dates is defined and log_dates %}
+        AND month_year IN (SELECT month_year FROM log_months_filter)
+        {% endif %}
+    GROUP BY
+        fc_code, month_year, category_id, label_id
+),
+resource_productivity_pup AS (
+    SELECT
+        fc_code,
+        month_year,
+        argMax(da_full_time, created_ts) AS da_full_time,
+        argMax(da_part_time, created_ts) AS da_part_time,
+        argMax(shoppers_full_time, created_ts) AS shoppers_full_time,
+        argMax(shoppers_part_time, created_ts) AS shoppers_part_time,
+        argMax(refiller_full_time, created_ts) AS refiller_full_time,
+        argMax(refiller_part_time, created_ts) AS refiller_part_time,
+        argMax(last_mile_loader_full_time, created_ts) AS last_mile_loader_full_time,
+        argMax(last_mile_loader_part_time, created_ts) AS last_mile_loader_part_time,
+        argMax(vehicle, created_ts) AS vehicle,
+        argMax(dcd, created_ts) AS dcd
+    FROM
+        {{ source_db }}.{{ source_table_resource_productivity_pc }}
+    WHERE
+        category_id = 3 AND label_id = 8
+        {% if log_dates is defined and log_dates %}
+        AND month_year IN (SELECT month_year FROM log_months_filter)
+        {% endif %}
+    GROUP BY
+        fc_code, month_year, category_id, label_id
+),
+region AS (
+    SELECT
+        argMax(region, created_ts) AS region,
+        argMax(state, created_ts) AS state,
+        argMax(city, created_ts) AS city,
+        fc_code
+    FROM
+        {{ source_db }}.{{ source_table_region }}
+    GROUP BY
+        fc_code
+),
+trends AS (
+	SELECT
+        fp.log_date AS log_date,
+        r.region AS region,
+        r.state AS state,
+        r.city AS city,
+        fp.fc_code AS fc_code,
+        fp.fc_name AS fc_name,
+        rp_hd.da_full_time AS hd_committed_capacity,
+        fp.hd_set_capacity AS hd_planned_capacity,
+        fp.hd_consumed_capacity AS hd_consumed_capacity,
+        rp_pup.da_full_time AS pup_committed_capacity,
+        fp.pup_set_capacity AS pup_planned_capacity,
+        fp.pup_consumed_capacity AS pup_consumed_capacity,
+        fp.hd_delivered_shipments_volume AS hd_delivered_shipment_volume,
+        fp.pup_delivered_shipments_volume AS pup_delivered_shipment_volume,
+        hd_delivered_shipments_volume + pup_delivered_shipments_volume AS overall_delivered_shipment_volume,
+        CASE WHEN fp.total_hd_orders_count != 0 THEN ROUND(((fp.hd_on_time_delivered_shipments/fp.total_hd_orders_count)*100)) ELSE 0 END AS hd_on_time,
+        CASE WHEN fp.total_pup_orders_count != 0 THEN ROUND(((fp.pup_on_time/fp.total_pup_orders_count)*100)) ELSE 0 END AS pup_on_time,
+        CASE WHEN (total_hd_orders_count + total_pup_orders_count) != 0 THEN ROUND(((hd_on_time_delivered_shipments + fp.pup_on_time)/(total_hd_orders_count + total_pup_orders_count))*100) ELSE 0 END AS overall_on_time,
+        fp.hd_adj_ds AS hd_adj_ds
+    FROM
+        fc_productivity fp
+    LEFT JOIN region r
+    ON fp.fc_code = r.fc_code
+    LEFT JOIN resource_productivity_hd rp_hd
+    ON fp.fc_code = rp_hd.fc_code AND toStartOfMonth(fp.log_date) = toDate(rp_hd.month_year)
+    LEFT JOIN resource_productivity_pup rp_pup
+    ON fp.fc_code = rp_pup.fc_code AND toStartOfMonth(fp.log_date) = toDate(rp_pup.month_year)
+)
+SELECT DISTINCT * FROM trends;

@@ -1,0 +1,11 @@
+CREATE MATERIALIZED VIEW {{ target_db }}.{{ target_view }}
+ON CLUSTER {{ target_cluster }}
+TO {{ target_db }}.{{ target_table }}
+AS
+SELECT
+	TRIM(JSONExtractString(event, 'region')) AS region,
+	TRIM(JSONExtractString(event, 'state')) AS state,
+	TRIM(JSONExtractString(event, 'city')) AS city,
+    TRIM(JSONExtractString(event, 'fcCode')) AS fc_code
+FROM
+	{{ source_db }}.{{ source_table }};

@@ -1,0 +1,6 @@
+{% set use_cluster = env in ['uat', 'prod'] %}
+
+TRUNCATE TABLE {{ target_db }}.{{ target_table }} 
+{% if use_cluster %}
+ON CLUSTER {{ target_cluster }}
+{% endif %};

@@ -1,0 +1,29 @@
+{% set use_cluster = env in ['uat', 'prod'] %}
+
+CREATE MATERIALIZED VIEW {{ target_db }}.{{ target_view }}
+{% if use_cluster %}
+ON CLUSTER {{ target_cluster }}
+{% endif %}
+TO {{ target_db }}.{{ target_table }}
+AS
+SELECT
+    TRIM(JSONExtractString(event, 'fcCode')) AS fc_code,
+    toDate(parseDateTimeBestEffort(concat('01-', TRIM(JSONExtractString(event, 'monthYear'))))) AS month_year,
+    TRIM(JSONExtractString(category, 'categoryName')) AS category_name,
+    TRIM(JSONExtractString(data, 'label')) AS label,
+    toInt32OrZero(TRIM(JSONExtractString(data, 'metadata', 'daFullTime'))) AS da_full_time,
+    toInt32OrZero(TRIM(JSONExtractString(data, 'metadata', 'daPartTime'))) AS da_part_time,
+    toInt32OrZero(TRIM(JSONExtractString(data, 'metadata', 'shoppersFullTime'))) AS shoppers_full_time,
+    toInt32OrZero(TRIM(JSONExtractString(data, 'metadata', 'shoppersPartTime'))) AS shoppers_part_time,
+    toInt32OrZero(TRIM(JSONExtractString(data, 'metadata', 'refillerFullTime'))) AS refiller_full_time,
+    toInt32OrZero(TRIM(JSONExtractString(data, 'metadata', 'refillerPartTime'))) AS refiller_part_time,
+    toInt32OrZero(TRIM(JSONExtractString(data, 'metadata', 'lastMileLoaderFullTime'))) AS last_mile_loader_full_time,
+    toInt32OrZero(TRIM(JSONExtractString(data, 'metadata', 'lastMileLoaderPartTime'))) AS last_mile_loader_part_time,
+    toInt32OrZero(TRIM(JSONExtractString(data, 'metadata', 'vehicle'))) AS vehicle,
+    toInt32OrZero(TRIM(JSONExtractString(data, 'metadata', 'dcd'))) AS dcd,
+    toInt32OrZero(TRIM(JSONExtractString(data, 'metadata', 'dpd'))) AS dpd,
+    toInt8OrZero(TRIM(JSONExtractString(category, 'categoryId'))) AS category_id,
+    toInt8OrZero(TRIM(JSONExtractString(data, 'labelId'))) AS label_id
+FROM {{ source_db }}.{{ source_table }}
+ARRAY JOIN JSONExtractArrayRaw(TRIM(JSONExtractString(event, 'categories'))) AS category
+ARRAY JOIN JSONExtractArrayRaw(TRIM(JSONExtractString(category, 'data'))) AS data;

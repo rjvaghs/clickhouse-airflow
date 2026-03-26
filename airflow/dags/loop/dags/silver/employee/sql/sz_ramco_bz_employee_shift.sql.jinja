@@ -1,0 +1,53 @@
+INSERT INTO {{ silver_db }}.{{ silver_table }}
+(   
+    batch_id,
+    event_date,
+    created_by,
+    created_ts,
+    shift_code,
+    start_time,
+    end_time,
+    is_night_shift
+)
+SETTINGS distributed_product_mode = 'global'
+WITH bronze_data AS (
+    SELECT
+        TRIM(shift_code) AS shift_code,
+        event_date,
+        TRIM(start_time) AS start_time,
+        TRIM(end_time) AS end_time,
+        (
+            (
+                (toUInt8(splitByChar(':', substring(start_time,1,8))[1]) % 12) +
+                if(position(start_time,'PM') > 0, 12, 0)
+            ) * 3600
+            +
+            toUInt8(splitByChar(':', substring(start_time,1,8))[2]) * 60
+            +
+            toUInt8(splitByChar(':', substring(start_time,1,8))[3])
+        ) AS start_seconds,
+        (
+            (
+                (toUInt8(splitByChar(':', substring(end_time,1,8))[1]) % 12) +
+                if(position(end_time,'PM') > 0, 12, 0)
+            ) * 3600
+            +
+            toUInt8(splitByChar(':', substring(end_time,1,8))[2]) * 60
+            +
+            toUInt8(splitByChar(':', substring(end_time,1,8))[3])
+        ) AS end_seconds
+    FROM 
+        {{ bronze_db }}.{{ bronze_table }}
+    WHERE shift_code IS NOT NULL AND start_time IS NOT NULL AND end_time IS NOT NULL AND 
+    event_date BETWEEN '{{ event_date_from }}' AND '{{ event_date_to }}'
+)
+SELECT
+    shift_code,
+    event_date,
+    '{{ dag_id }}' AS created_by,
+    now() AS created_ts,
+    shift_code,
+    start_time,
+    end_time,
+    start_seconds > end_seconds AS is_night_shift
+FROM bronze_data;

@@ -1,0 +1,22 @@
+{% set use_s3 = env in ['dev'] %}
+
+INSERT INTO {{ bronze_db }}.{{ bronze_table }}
+SELECT
+    replaceRegexpAll(replace(_file, '.csv', ''), '[^a-zA-Z0-9]', '') AS batch_id,
+    now64(3) AS created_ts,
+    '{{ dag_id }}' AS created_by,
+    EmployeeCode,
+    LogDate,
+    LogTime
+FROM
+{% if use_s3 %}
+    s3(
+        '{{ files_location }}', 'CSV'
+    )
+{% else %}
+    url(
+        '{{ base_url }}{{ process_path }}/{{ file }}',
+        'CSV'
+    )
+{% endif %}
+SETTINGS input_format_defaults_for_omitted_fields = 1;

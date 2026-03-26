@@ -1,0 +1,26 @@
+{
+    "name": "region_clickhouse_sink",
+    "config": {
+        "connector.class": "com.clickhouse.kafka.connect.ClickHouseSinkConnector",
+        "tasks.max": "1",
+        "topics": "cntdl.loop.region",
+        "hostname": "clickhouse",
+        "port": "8123",
+        "database": "bronze",
+        "username": "default",
+        "password": "admin",
+        "table": "bz_region",
+        "topic2TableMap": "cntdl.loop.region = bz_region",
+        "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+        "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+        "key.converter.schemas.enable": "false",
+        "value.converter.schemas.enable": "false",
+        "insert.mode": "insert",
+        "batch.size": "1000",
+        "buffer.flush.time": "5000",
+        "timeout": "30000",
+        "errors.tolerance": "all",
+        "errors.log.enable": "true",
+        "errors.log.include.messages": "true"
+    }
+}

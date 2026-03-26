@@ -1,0 +1,53 @@
+environments
+  prod:
+      clickhouse:
+        conn_id: clickhouse-prod
+        cluster: dc_prod_cluster1
+      sftp-ramco:
+        conn_id: sftp-ramco-prod
+        directory: /opt/ramco
+      sftp-biomax:
+        conn_id: sftp-biomax-prod
+        directory: /var/ftp/rmcoftp/ARS_IN
+      nfs:
+        conn_id: nfs-prod
+        base_url: http://10.0.49.50
+        directories:
+          biomax:
+            process_directory: /airflow/biomax/processed
+            archive_directory: /airflow/biomax/archive
+            file_prefix: "ars_fc_*.csv"
+          ramco:
+            process_directory: /airflow/ramco/processed
+            archive_directory: /airflow/ramco/archive
+            file_prefix: "bw_emp_master_*.csv"
+      kafka-connect:
+        endpoint: http://dc-prod-kafka-connect-1:8083
+        connector:
+          enterprise_employee:
+            topic: centraltrigdlemployee
+            table: bz_enterprise_employee_local
+          da_productivity:
+            topic: cntdl.datamart.daproductivity
+            table: bz_da_productivity_local
+          fc_productivity:
+            topic: cntdl.datamart.fcproductivity
+            table: bz_fc_productivity_local
+          vehicle_productivity:
+            topic: cntdl.datamart.vehicleutilization
+            table: bz_vehicle_productivity_local
+          shopper_productivity:
+            topic: cntdl.datamart.shopperproductivity
+            table: bz_shopper_productivity_local
+          resource_productivity:
+            topic: cntloopcore.datamart.planningandconfiguration
+            table: bz_resource_productivity_pc_local
+          resource_level_productivity:
+            topic: cntdl.datamart.resourceproductivity
+            table: bz_resource_level_productivity_local
+          region:
+            topic: cntdl.datamart.regiondetails
+            table: bz_region_local
+          dlq_failed_messages:
+            topic: dlq.cntdl.loop.failed_messages
+            table: ad_dlq_failed_messages

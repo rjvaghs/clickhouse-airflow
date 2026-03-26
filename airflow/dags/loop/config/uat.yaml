@@ -1,0 +1,64 @@
+environments:
+  uat:
+    clickhouse:
+      conn_id: clickhouse-uat
+      cluster: cluster1
+    sftp-ramco:
+      conn_id: sftp-ramco-uat
+      directory: 
+        employee: /opt/ramco/
+        shift: /opt/ramco/shift
+        roaster: /opt/ramco/roaster
+    sftp-biomax:
+      conn_id: sftp-biomax-uat
+      directory: /opt/BIOMAX
+    nfs:
+      conn_id: nfs-uat
+      base_url: http://10.0.27.195
+      directories:
+        biomax:
+          process_directory: /airflow/biomax/processed
+          archive_directory: /airflow/biomax/archive
+          file_prefix: "ars_fc_*.csv"
+        ramco:
+          process_directory: /airflow/ramco/employee/processed
+          archive_directory: /airflow/ramco/employee/archive
+          file_prefix: "bw_emp_master_*.csv"
+        ramco-shift:
+          process_directory: /airflow/ramco/shift/processed
+          archive_directory: /airflow/ramco/shift/archive
+          file_prefix: "ShiftMaster_*.csv"
+        ramco-roaster:
+          process_directory: /airflow/ramco/roaster/processed
+          archive_directory: /airflow/ramco/roaster/archive
+          file_prefix: ""
+    kafka-connect:
+      endpoint: http://uat-kafka-connect-1:8083
+      connector:
+        enterprise_employee:
+          topic: centraltrigdlemployee
+          table: bz_enterprise_employee_local
+        da_productivity:
+          topic: cntdl.datamart.daproductivity
+          table: bz_da_productivity_local
+        fc_productivity:
+          topic: cntdl.datamart.fcproductivity
+          table: bz_fc_productivity_local
+        vehicle_productivity:
+          topic: cntdl.datamart.vehicleutilization
+          table: bz_vehicle_productivity_local
+        shopper_productivity:
+          topic: cntdl.datamart.shopperproductivity
+          table: bz_shopper_productivity_local
+        resource_productivity:
+          topic: cntloopcore.datamart.planningandconfiguration
+          table: bz_resource_productivity_pc_local
+        resource_level_productivity:
+          topic: cntdl.datamart.resourceproductivity
+          table: bz_resource_level_productivity_local
+        region:
+          topic: cntdl.datamart.regiondetails
+          table: bz_region_local
+        dlq_failed_messages:
+          topic: dlq.cntdl.loop.failed_messages
+          table: ad_dlq_failed_messages

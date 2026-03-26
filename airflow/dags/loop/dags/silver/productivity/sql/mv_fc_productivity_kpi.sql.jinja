@@ -1,0 +1,35 @@
+{% set use_cluster = env in ['uat', 'prod'] %}
+
+CREATE MATERIALIZED VIEW {{ target_db }}.{{ target_view }}
+{% if use_cluster %}
+ON CLUSTER {{ target_cluster }}
+{% endif %}
+TO {{ target_db }}.{{ target_table }}
+AS
+SELECT
+	TRIM(JSONExtractString(event, 'fcCode')) AS fc_code,
+	TRIM(JSONExtractString(event, 'fcName')) AS fc_name,
+	toDate(TRIM(JSONExtractString(event, 'activityDate'))) AS log_date,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'deliveredShipmentsVolumn'))) AS delivered_shipments_volume,
+	toFloat32OrZero(TRIM(JSONExtractString(event, 'deliveredShipmentsValue'))) AS delivered_shipments_value,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'hdDeliveredShipmentsVolumn'))) AS hd_delivered_shipments_volume,
+	toFloat32OrZero(TRIM(JSONExtractString(event, 'hdDeliveredShipmentsValue'))) AS hd_delivered_shipments_value,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'pupDeliveredShipmentsVolumn'))) AS pup_delivered_shipments_volume,
+	toFloat32OrZero(TRIM(JSONExtractString(event, 'pupDeliveredShipmentsValue'))) AS pup_delivered_shipments_value,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'hdOntimeDeliveredShipments'))) AS hd_on_time_delivered_shipments,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'hdLateShipments'))) AS hd_late_shipments,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'hdSetCapacity'))) AS hd_set_capacity,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'hdConsumedCapacity'))) AS hd_consumed_capacity,
+	toFloat32OrZero(TRIM(JSONExtractString(event, 'hdOpenShipmentsPercentage'))) AS hd_open_shipments_percentage,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'hdTotalSlots'))) AS hd_total_slots,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'hdAdjDs'))) AS hd_adj_ds,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'hdAdjDsCds'))) AS hd_adj_ds_cds,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'pupSetCapacity'))) AS pup_set_capacity,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'pupConsumedCapacity'))) AS pup_consumed_capacity,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'pupOnTimeShipment'))) AS pup_on_time,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'totalPupOrdersCount'))) AS total_pup_orders_count,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'totalHdOrdersCount'))) AS total_hd_orders_count
+FROM
+	{{ source_db }}.{{ source_table }};
+
+

@@ -1,0 +1,478 @@
+INSERT INTO {{ target_db }}.{{ target_table }}
+(
+    log_date,
+    fc_code,
+    resource_type,
+    utilized,
+    present,
+    active,
+    absent_rate,
+    budgeted,
+    avg_productivity,
+    productivity_overages,
+    productivity_underages,
+    shortage_rate,
+    productivity_goal
+)
+WITH
+{% if log_dates is defined and log_dates %}
+log_dates_filter AS (
+    SELECT toDate(d) AS log_date
+    FROM (
+        SELECT arrayJoin([
+            {% for d in log_dates %}
+            '{{ d }}'{% if not loop.last %}, {% endif %}
+            {% endfor %}
+        ]) AS d
+    )
+),
+log_months_filter AS (
+    SELECT DISTINCT toStartOfMonth(log_date) AS month_year
+    FROM log_dates_filter
+),
+{% endif %}
+latest_attendance AS (
+    SELECT
+        log_date,
+        argMax(fc_code, created_ts) AS fc_code,
+        argMax(job_type, created_ts) AS job_type,
+        argMax(role, created_ts) AS role,
+        argMax(is_active, created_ts) AS is_active,
+        argMax(is_present, created_ts) AS is_present,
+        argMax(on_leave, created_ts) AS on_leave,
+        CASE WHEN role = 'DA' AND job_type = 'FT' THEN 'DA_FULL_TIME'
+	         WHEN role = 'DA' AND job_type = 'PT' THEN 'DA_PART_TIME'
+	         WHEN role = 'DCD' AND job_type = 'DCD' THEN 'DCD'
+	         WHEN role = 'Shopper' AND job_type = 'FT' THEN 'SHOPPER_FULL_TIME'
+	         WHEN role = 'Shopper' AND job_type = 'PT' THEN 'SHOPPER_PART_TIME'
+	         WHEN role = 'Refiller' AND job_type = 'FT' THEN 'REFILLER_FULL_TIME'
+	         WHEN role = 'Refiller' AND job_type = 'PT' THEN 'REFILLER_PART_TIME'
+	         WHEN role = 'Loader' AND job_type = 'FT' THEN 'LOADER_FULL_TIME'
+	         WHEN role = 'Loader' AND job_type = 'PT' THEN 'LOADER_PART_TIME'
+	         ELSE NULL END AS resource_type
+    FROM
+        {{ source_db }}.{{ source_table_employee_attendance }}
+    {% if log_dates is defined and log_dates %}
+    WHERE log_date IN (SELECT log_date FROM log_dates_filter)
+    {% endif %}
+    GROUP BY
+        employee_id, log_date
+),
+attendance AS (
+    SELECT 
+        log_date,
+        fc_code,
+        job_type,
+        role,
+        resource_type,
+        toInt32(countIf(is_active = 1)) AS active,
+        toInt32(countIf(is_present = 1)) AS present,
+        toInt32(countIf(on_leave = 1)) AS on_leave,
+        CASE WHEN active != 0 THEN (1-(present/active))*100 ELSE 0 END AS absent_rate
+    FROM
+        latest_attendance
+    GROUP BY
+        log_date, fc_code, job_type, role, resource_type
+),
+fc_productivity AS (
+    SELECT
+        log_date,
+        fc_code,
+        fc_name,
+        argMax(delivered_shipments_volume, created_ts) AS delivered_shipments_volume
+    FROM
+        {{ source_db }}.{{ source_table_fc_productivity }}
+    {% if log_dates is defined and log_dates %}
+    WHERE log_date IN (SELECT log_date FROM log_dates_filter)
+    {% endif %}
+    GROUP BY
+        log_date, fc_code, fc_name
+),
+da_productivity AS (
+    SELECT
+        log_date,
+        fc_code,
+        toInt32(argMax(distinct_full_time_das, created_ts)) AS distinct_full_time_das,
+        toInt32(argMax(distinct_part_time_das, created_ts)) AS distinct_part_time_das,
+        toInt32(argMax(distinct_dcd, created_ts)) AS distinct_dcd,
+        toInt32(argMax(distinct_dpd, created_ts)) AS distinct_dpd,
+        toInt32(argMax(hd_full_time_delivered_orders_count, created_ts)) AS hd_full_time_delivered_orders_count,
+		toInt32(argMax(hd_part_time_delivered_orders_count, created_ts)) AS hd_part_time_delivered_orders_count,
+		toInt32(argMax(hd_dcd_delivered_orders_count, created_ts)) AS hd_dcd_delivered_orders_count,
+        toInt32(argMax(hd_dpd_delivered_orders_count, created_ts)) AS hd_dpd_delivered_orders_count
+    FROM 
+        {{ source_db }}.{{ source_table_da_productivity }}
+    {% if log_dates is defined and log_dates %}
+    WHERE log_date IN (SELECT log_date FROM log_dates_filter)
+    {% endif %}
+    GROUP BY
+        log_date, fc_code, fc_name
+),
+shopper_productivity AS (
+    SELECT
+        log_date,
+        fc_code,
+        toInt32(argMax(distinct_full_time_shoppers, created_ts)) AS distinct_full_time_shoppers,
+        toInt32(argMax(distinct_part_time_shoppers, created_ts)) AS distinct_part_time_shoppers,
+        toInt32(argMax(items_packed_count_full_time, created_ts)) AS items_packed_count_full_time,
+        toInt32(argMax(items_packed_count_part_time, created_ts)) AS items_packed_count_part_time
+    FROM
+        {{ source_db }}.{{ source_table_shopper_productivity }}
+    {% if log_dates is defined and log_dates %}
+    WHERE log_date IN (SELECT log_date FROM log_dates_filter)
+    {% endif %}
+    GROUP BY
+        log_date, fc_code, fc_name
+),
+latest_vehicle_productivity AS (
+    SELECT
+        log_date,
+        fc_code,
+        toInt32(argMax(no_of_vehicles, created_ts)) AS no_of_vehicles,
+        toInt32(argMax(vehicle_checkin_count, created_ts)) AS vehicle_checkin_count,
+        toInt32(argMax(vehicle_per_day_deliveries, created_ts)) AS vehicle_per_day_deliveries
+    FROM
+        {{ source_db }}.{{ source_table_vehicle_productivity }}
+    {% if log_dates is defined and log_dates %}
+    WHERE log_date IN (SELECT log_date FROM log_dates_filter)
+    {% endif %}
+    GROUP BY
+        log_date, fc_code, vehicle_type
+),
+vehicle_productivity AS (
+    SELECT
+        log_date,
+        fc_code,
+        SUM(no_of_vehicles) AS no_of_vehicles,
+        SUM(vehicle_checkin_count) AS vehicle_checkin_count,
+        (1-(vehicle_checkin_count/no_of_vehicles))*100 AS absent_rate,
+        SUM(vehicle_per_day_deliveries) AS vehicle_per_day_deliveries
+    FROM
+        latest_vehicle_productivity
+    GROUP BY
+        log_date, fc_code
+),
+resource_productivity_hr AS (
+    SELECT
+        fc_code,
+        month_year,
+        category_id,
+        label_id,
+        toInt32(argMax(da_full_time, created_ts)) AS da_full_time,
+        toInt32(argMax(da_part_time, created_ts)) AS da_part_time,
+        toInt32(argMax(shoppers_full_time, created_ts)) AS shoppers_full_time,
+        toInt32(argMax(shoppers_part_time, created_ts)) AS shoppers_part_time,
+        toInt32(argMax(refiller_full_time, created_ts)) AS refiller_full_time,
+        toInt32(argMax(refiller_part_time, created_ts)) AS refiller_part_time,
+        toInt32(argMax(last_mile_loader_full_time, created_ts)) AS last_mile_loader_full_time,
+        toInt32(argMax(last_mile_loader_part_time, created_ts)) AS last_mile_loader_part_time,
+        toInt32(argMax(vehicle, created_ts)) AS vehicle,
+        toInt32(argMax(dcd, created_ts)) AS dcd,
+        argMax(dpd, created_ts) AS dpd
+    FROM
+        {{ source_db }}.{{ source_table_resource_productivity_pc }}
+    WHERE
+        category_id = 2 AND label_id = 6
+        {% if log_dates is defined and log_dates %}
+        AND month_year IN (SELECT month_year FROM log_months_filter)
+        {% endif %}
+    GROUP BY
+        fc_code, month_year, category_id, label_id
+),
+resource_productivity_pi AS (
+    SELECT
+        fc_code,
+        month_year,
+        category_id,
+        label_id,
+        toInt32(argMax(da_full_time, created_ts)) AS da_full_time,
+        toInt32(argMax(da_part_time, created_ts)) AS da_part_time,
+        toInt32(argMax(shoppers_full_time, created_ts)) AS shoppers_full_time,
+        toInt32(argMax(shoppers_part_time, created_ts)) AS shoppers_part_time,
+        toInt32(argMax(refiller_full_time, created_ts)) AS refiller_full_time,
+        toInt32(argMax(refiller_part_time, created_ts)) AS refiller_part_time,
+        toInt32(argMax(last_mile_loader_full_time, created_ts)) AS last_mile_loader_full_time,
+        toInt32(argMax(last_mile_loader_part_time, created_ts)) AS last_mile_loader_part_time,
+        toInt32(argMax(vehicle, created_ts)) AS vehicle,
+        toInt32(argMax(dcd, created_ts)) AS dcd,
+        argMax(dpd, created_ts) AS dpd
+    FROM
+        {{ source_db }}.{{ source_table_resource_productivity_pc }}
+    WHERE
+        category_id = 3 AND label_id = 9
+        {% if log_dates is defined and log_dates %}
+        AND month_year IN (SELECT month_year FROM log_months_filter)
+        {% endif %}
+    GROUP BY
+        fc_code, month_year, category_id, label_id
+),
+resource_productivity_fc AS (
+    SELECT
+        fc_code,
+        month_year,
+        category_id,
+        label_id,
+        toInt32(argMax(da_full_time, created_ts)) AS da_full_time,
+        toInt32(argMax(da_part_time, created_ts)) AS da_part_time,
+        toInt32(argMax(shoppers_full_time, created_ts)) AS shoppers_full_time,
+        toInt32(argMax(shoppers_part_time, created_ts)) AS shoppers_part_time,
+        toInt32(argMax(refiller_full_time, created_ts)) AS refiller_full_time,
+        toInt32(argMax(refiller_part_time, created_ts)) AS refiller_part_time,
+        toInt32(argMax(last_mile_loader_full_time, created_ts)) AS last_mile_loader_full_time,
+        toInt32(argMax(last_mile_loader_part_time, created_ts)) AS last_mile_loader_part_time,
+        toInt32(argMax(vehicle, created_ts)) AS vehicle,
+        toInt32(argMax(dcd, created_ts)) AS dcd,
+        argMax(dpd, created_ts) AS dpd
+    FROM
+        {{ source_db }}.{{ source_table_resource_productivity_pc }}
+    WHERE
+    	category_id = 1 AND label_id = 2
+        {% if log_dates is defined and log_dates %}
+        AND month_year IN (SELECT month_year FROM log_months_filter)
+        {% endif %}
+    GROUP BY
+        fc_code, month_year, category_id, label_id
+),
+resource_productivity_ac AS (
+    SELECT
+        fc_code,
+        month_year,
+        category_id,
+        label_id,
+        argMax(da_full_time, created_ts) AS da_full_time,
+        argMax(da_part_time, created_ts) AS da_part_time,
+        argMax(shoppers_full_time, created_ts) AS shoppers_full_time,
+        argMax(shoppers_part_time, created_ts) AS shoppers_part_time,
+        argMax(refiller_full_time, created_ts) AS refiller_full_time,
+        argMax(refiller_part_time, created_ts) AS refiller_part_time,
+        argMax(last_mile_loader_full_time, created_ts) AS last_mile_loader_full_time,
+        argMax(last_mile_loader_part_time, created_ts) AS last_mile_loader_part_time,
+        argMax(vehicle, created_ts) AS vehicle,
+        argMax(dcd, created_ts) AS dcd,
+        argMax(dpd, created_ts) AS dpd
+    FROM
+        {{ source_db }}.{{ source_table_resource_productivity_pc }}
+    WHERE
+    	category_id = 1 AND label_id = 1
+        {% if log_dates is defined and log_dates %}
+        AND month_year IN (SELECT month_year FROM log_months_filter)
+        {% endif %}
+    GROUP BY
+        fc_code, month_year, category_id, label_id
+),
+silver_resource_level AS (
+	SELECT
+		log_date,
+		fc_code,
+		resource_type,
+		job_type,
+		id,
+		argMax(productivity_count, event_ts) AS productivity_count
+	FROM {{ source_db }}.{{ source_table_resource_level_productivity }}
+    {% if log_dates is defined and log_dates %}
+    WHERE log_date IN (SELECT log_date FROM log_dates_filter)
+    {% endif %}
+	GROUP BY
+		log_date,
+		fc_code,
+		resource_type,
+		job_type,
+		id
+),
+silver_resource_level_2 AS (
+SELECT
+		s_rl.log_date AS log_date,
+		s_rl.fc_code AS fc_code,
+		CASE WHEN s_rl.resource_type = 'DA' AND s_rl.job_type = 'Full-Time' THEN 'DA_FULL_TIME'
+	         WHEN s_rl.resource_type = 'DA' AND s_rl.job_type = 'Part-Time' THEN 'DA_PART_TIME'
+	         WHEN s_rl.resource_type = 'SHOPPER' AND s_rl.job_type = 'Full-Time' THEN 'SHOPPER_FULL_TIME'
+	         WHEN s_rl.resource_type = 'SHOPPER' AND s_rl.job_type = 'Part-Time' THEN 'SHOPPER_PART_TIME'
+	         WHEN s_rl.resource_type = 'VEHICLE' THEN 'VEHICLE'
+	         WHEN s_rl.resource_type = 'DCD' THEN 'DCD'
+             WHEN s_rl.resource_type = 'DPD' THEN 'DPD'  
+		END AS resource_type,
+		s_rl.id AS id,
+		s_rl.productivity_count AS productivity_count,
+		CASE WHEN resource_type = 'DA_FULL_TIME' THEN rp_fc.da_full_time
+	         WHEN resource_type = 'DA_PART_TIME' THEN rp_fc.da_part_time
+	         WHEN resource_type = 'SHOPPER_FULL_TIME' THEN rp_fc.shoppers_full_time
+	         WHEN resource_type = 'SHOPPER_PART_TIME' THEN rp_fc.shoppers_part_time
+	         WHEN resource_type = 'VEHICLE' THEN rp_fc.vehicle
+	         WHEN resource_type = 'DCD' THEN rp_fc.dcd
+             WHEN resource_type = 'DPD' THEN rp_fc.dpd 
+		END AS productivity_goal
+	FROM silver_resource_level s_rl
+	LEFT JOIN resource_productivity_fc rp_fc 
+	    ON s_rl.fc_code = rp_fc.fc_code AND toStartOfMonth(s_rl.log_date) = toDate(rp_fc.month_year)
+),
+g_config AS (
+    SELECT
+        value
+    FROM silver.sz_global_configs
+    WHERE config = 'productivity_config_percentage'
+),
+silver_resource_level_agg AS (
+    SELECT
+        s.fc_code,
+        s.log_date,
+        s.resource_type,
+        countIf(s.productivity_count < s.productivity_goal*(1 - (g.value/100))) AS underage_count,
+        countIf(s.productivity_count > s.productivity_goal*(1 + (g.value/100))) AS overage_count
+    FROM silver_resource_level_2 s
+    CROSS JOIN g_config g
+    GROUP BY s.fc_code,
+        s.log_date,
+	    s.resource_type
+),
+dashboard AS (
+	SELECT
+        a.log_date AS log_date,
+	    a.fc_code AS fc_code,
+	    a.resource_type AS resource_type,
+	    CASE WHEN resource_type = 'DA_FULL_TIME' THEN dp.distinct_full_time_das 
+	         WHEN resource_type = 'DA_PART_TIME' THEN dp.distinct_part_time_das
+	         WHEN resource_type = 'SHOPPER_FULL_TIME' THEN sp.distinct_full_time_shoppers
+	         WHEN resource_type = 'SHOPPER_PART_TIME' THEN sp.distinct_part_time_shoppers
+	         WHEN resource_type = 'REFILLER_FULL_TIME' THEN a.present
+	         WHEN resource_type = 'REFILLER_PART_TIME' THEN a.present
+	         WHEN resource_type = 'LOADER_FULL_TIME' THEN a.present
+	         WHEN resource_type = 'LOADER_PART_TIME' THEN a.present
+	         ELSE NULL END AS utilized,
+	    a.present AS present,
+        a.active AS active,
+	    ROUND(a.absent_rate) AS absent_rate,
+	    CASE WHEN resource_type = 'DA_FULL_TIME' THEN rp_hr.da_full_time 
+	         WHEN resource_type = 'DA_PART_TIME' THEN rp_hr.da_part_time
+	         WHEN resource_type = 'SHOPPER_FULL_TIME' THEN rp_hr.shoppers_full_time
+	         WHEN resource_type = 'SHOPPER_PART_TIME' THEN rp_hr.shoppers_part_time
+	         WHEN resource_type = 'REFILLER_FULL_TIME' THEN rp_hr.refiller_full_time
+	         WHEN resource_type = 'REFILLER_PART_TIME' THEN rp_hr.refiller_part_time
+	         WHEN resource_type = 'LOADER_FULL_TIME' THEN rp_hr.last_mile_loader_full_time
+	         WHEN resource_type = 'LOADER_PART_TIME' THEN rp_hr.last_mile_loader_part_time
+	         ELSE NULL END AS budgeted,
+	    CASE 
+            WHEN resource_type = 'DA_FULL_TIME' THEN 
+                COALESCE(ROUND(dp.hd_full_time_delivered_orders_count / NULLIF(utilized, 0)), 0)
+            WHEN resource_type = 'DA_PART_TIME' THEN 
+                COALESCE(ROUND(dp.hd_part_time_delivered_orders_count / NULLIF(utilized, 0)), 0)
+            WHEN resource_type = 'SHOPPER_FULL_TIME' THEN 
+                COALESCE(ROUND(sp.items_packed_count_full_time / NULLIF(utilized, 0)), 0)
+            WHEN resource_type = 'SHOPPER_PART_TIME' THEN 
+                COALESCE(ROUND(sp.items_packed_count_part_time / NULLIF(utilized, 0)), 0)
+            WHEN resource_type = 'REFILLER_FULL_TIME' THEN 
+                COALESCE(ROUND(fp.delivered_shipments_volume / NULLIF(utilized, 0)), 0)
+            WHEN resource_type = 'REFILLER_PART_TIME' THEN 
+                COALESCE(ROUND(fp.delivered_shipments_volume / NULLIF(utilized, 0)), 0)
+            WHEN resource_type = 'LOADER_FULL_TIME' THEN 
+                COALESCE(ROUND(fp.delivered_shipments_volume / NULLIF(utilized, 0)), 0)
+            WHEN resource_type = 'LOADER_PART_TIME' THEN 
+                COALESCE(ROUND(fp.delivered_shipments_volume / NULLIF(utilized, 0)), 0)
+            ELSE 0
+        END AS avg_productivity,
+        CASE WHEN resource_type = 'REFILLER_FULL_TIME' OR resource_type = 'REFILLER_PART_TIME' OR resource_type = 'LOADER_FULL_TIME' OR resource_type = 'LOADER_PART_TIME' THEN NULL
+             WHEN utilized != 0 THEN ROUND((rl_agg.overage_count/utilized)*100) 
+             ELSE 0 END AS productivity_overages,
+	    CASE WHEN resource_type = 'REFILLER_FULL_TIME' OR resource_type = 'REFILLER_PART_TIME' OR resource_type = 'LOADER_FULL_TIME' OR resource_type = 'LOADER_PART_TIME' THEN NULL
+             WHEN utilized != 0 THEN ROUND((rl_agg.underage_count/utilized)*100) 
+             ELSE 0 END AS productivity_underages,
+        CASE WHEN budgeted != 0 THEN ROUND((1-(active/budgeted)) * 100) ELSE NULL END AS shortage_rate,
+        CASE WHEN resource_type = 'DA_FULL_TIME' THEN rp_fc.da_full_time
+	         WHEN resource_type = 'DA_PART_TIME' THEN rp_fc.da_part_time
+	         WHEN resource_type = 'SHOPPER_FULL_TIME' THEN rp_fc.shoppers_full_time
+	         WHEN resource_type = 'SHOPPER_PART_TIME' THEN rp_fc.shoppers_part_time
+	         WHEN resource_type = 'REFILLER_FULL_TIME' THEN rp_fc.refiller_full_time
+	         WHEN resource_type = 'REFILLER_PART_TIME' THEN rp_fc.refiller_part_time
+	         WHEN resource_type = 'LOADER_FULL_TIME' THEN rp_fc.last_mile_loader_full_time
+	         WHEN resource_type = 'LOADER_PART_TIME' THEN rp_fc.last_mile_loader_part_time
+	         ELSE NULL END AS productivity_goal    	
+    FROM
+	    attendance a 
+    LEFT JOIN fc_productivity fp
+	    ON a.fc_code = fp.fc_code AND a.log_date = fp.log_date
+    LEFT JOIN da_productivity dp 
+	    ON a.fc_code = dp.fc_code AND a.log_date = dp.log_date
+	LEFT JOIN shopper_productivity sp
+	    ON a.fc_code = sp.fc_code AND a.log_date = sp.log_date
+	LEFT JOIN silver_resource_level_agg rl_agg
+		ON a.fc_code = rl_agg.fc_code AND a.log_date = rl_agg.log_date AND rl_agg.resource_type = a.resource_type
+	LEFT JOIN resource_productivity_fc rp_fc 
+	    ON a.fc_code = rp_fc.fc_code AND toStartOfMonth(a.log_date) = toDate(rp_fc.month_year)
+	LEFT JOIN resource_productivity_hr rp_hr 
+	    ON a.fc_code = rp_hr.fc_code AND toStartOfMonth(a.log_date) = toDate(rp_hr.month_year)
+	LEFT JOIN resource_productivity_ac rp_ac
+	    ON a.fc_code = rp_ac.fc_code AND toStartOfMonth(a.log_date) = toDate(rp_ac.month_year)
+	UNION ALL
+	SELECT
+		dp.log_date AS log_date,
+	    dp.fc_code AS fc_code,
+	    'DCD' AS resource_type,
+	    dp.distinct_dcd AS utilized,
+	    dp.distinct_dcd AS present,
+	    rp_pi.dcd AS active,
+	    CASE WHEN active != 0 THEN ROUND((1-(present/active)) * 100) ELSE 0 END AS absent_rate,
+	    rp_hr.dcd AS budgeted,
+        CASE WHEN utilized != 0 THEN ROUND(dp.hd_dcd_delivered_orders_count/utilized) ELSE NULL END AS avg_productivity,
+        CASE WHEN utilized != 0 THEN ROUND((rl_agg.overage_count/utilized)*100) ELSE 0 END AS productivity_overages,
+	    CASE WHEN utilized != 0 THEN ROUND((rl_agg.underage_count/utilized)*100) ELSE 0 END AS productivity_underages,
+	    CASE WHEN budgeted != 0 THEN ROUND((1-(active/budgeted)) * 100) ELSE 0 END AS shortage_rate,
+	    rp_fc.dcd AS productivity_goal
+	FROM
+		da_productivity dp
+	LEFT JOIN silver_resource_level_agg rl_agg
+		ON dp.fc_code = rl_agg.fc_code AND dp.log_date = rl_agg.log_date AND rl_agg.resource_type = 'DCD'
+	LEFT JOIN resource_productivity_fc rp_fc 
+	    ON dp.fc_code = rp_fc.fc_code AND toStartOfMonth(dp.log_date) = toDate(rp_fc.month_year)
+	LEFT JOIN resource_productivity_hr rp_hr 
+	    ON dp.fc_code = rp_hr.fc_code AND toStartOfMonth(dp.log_date) = toDate(rp_hr.month_year)
+    LEFT JOIN resource_productivity_pi rp_pi 
+	    ON dp.fc_code = rp_pi.fc_code AND toStartOfMonth(dp.log_date) = toDate(rp_pi.month_year)
+    UNION ALL
+    SELECT
+		dp.log_date AS log_date,
+	    dp.fc_code AS fc_code,
+	    'DPD' AS resource_type,
+	    dp.distinct_dpd AS utilized,
+	    dp.distinct_dpd AS present,
+	    rp_pi.dpd AS active,
+	    CASE WHEN present != 0 AND active != 0 THEN ROUND((1-(present/active)) * 100) ELSE NULL END AS absent_rate,
+	    rp_hr.dpd AS budgeted,
+        CASE WHEN utilized != 0 THEN ROUND(dp.hd_dpd_delivered_orders_count/utilized) ELSE NULL END AS avg_productivity,
+        CASE WHEN utilized != 0 THEN ROUND((rl_agg.overage_count/utilized)*100) ELSE 0 END AS productivity_overages,
+	    CASE WHEN utilized != 0 THEN ROUND((rl_agg.underage_count/utilized)*100) ELSE 0 END AS productivity_underages,
+	    CASE WHEN budgeted != 0 THEN ROUND((1-(active/budgeted)) * 100) ELSE NULL END AS shortage_rate,
+	    rp_fc.dpd AS productivity_goal
+	FROM
+		da_productivity dp
+	LEFT JOIN silver_resource_level_agg rl_agg
+		ON dp.fc_code = rl_agg.fc_code AND dp.log_date = rl_agg.log_date AND rl_agg.resource_type = 'DPD'
+	LEFT JOIN resource_productivity_fc rp_fc 
+	    ON dp.fc_code = rp_fc.fc_code AND toStartOfMonth(dp.log_date) = toDate(rp_fc.month_year)
+	LEFT JOIN resource_productivity_hr rp_hr 
+	    ON dp.fc_code = rp_hr.fc_code AND toStartOfMonth(dp.log_date) = toDate(rp_hr.month_year)
+    LEFT JOIN resource_productivity_pi rp_pi 
+	    ON dp.fc_code = rp_pi.fc_code AND toStartOfMonth(dp.log_date) = toDate(rp_pi.month_year)
+	UNION ALL
+	SELECT
+        vp.log_date AS log_date,
+	    vp.fc_code AS fc_code,
+	    'VEHICLES' AS resource_type,
+	    vp.no_of_vehicles AS utilized,
+	    vp.vehicle_checkin_count AS present,
+        rp_hr.vehicle AS active,
+	    CASE WHEN active != 0 THEN ROUND((1-(present/active)) * 100) ELSE 0 END AS absent_rate,
+	    rp_hr.vehicle AS budgeted,
+        CASE WHEN utilized != 0 THEN ROUND(vp.vehicle_per_day_deliveries/utilized) ELSE 0 END AS avg_productivity,
+        CASE WHEN utilized != 0 THEN ROUND((rl_agg.overage_count/utilized)*100) ELSE 0 END AS productivity_overages,
+	    CASE WHEN utilized != 0 THEN ROUND((rl_agg.underage_count/utilized)*100) ELSE 0 END AS productivity_underages,
+	    CASE WHEN budgeted != 0 THEN ROUND((1-(active/budgeted)) * 100) ELSE 0 END AS shortage_rate,
+	    rp_fc.vehicle AS productivity_goal
+	FROM
+	    vehicle_productivity vp 
+	LEFT JOIN silver_resource_level_agg rl_agg
+		ON vp.fc_code = rl_agg.fc_code AND vp.log_date = rl_agg.log_date AND rl_agg.resource_type = 'VEHICLE'
+	LEFT JOIN resource_productivity_fc rp_fc 
+	    ON vp.fc_code = rp_fc.fc_code AND toStartOfMonth(vp.log_date) = toDate(rp_fc.month_year)
+	LEFT JOIN resource_productivity_hr rp_hr 
+	    ON vp.fc_code = rp_hr.fc_code AND toStartOfMonth(vp.log_date) = toDate(rp_hr.month_year)
+)
+SELECT DISTINCT * FROM dashboard

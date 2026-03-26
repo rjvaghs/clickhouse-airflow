@@ -1,0 +1,25 @@
+{% set use_cluster = env in ['uat', 'prod'] %}
+
+CREATE MATERIALIZED VIEW {{ target_db }}.{{ target_view }}
+{% if use_cluster %}
+ON CLUSTER {{ target_cluster }}
+{% endif %}
+TO {{ target_db }}.{{ target_table }}
+AS
+SELECT
+	log_date,
+	fc_code,
+	fc_name,
+	vehicle_type,
+	planned_orders,
+	no_of_vehicles,
+	trips_count,
+	trips_per_vehicle_count,
+	all_vehicle_per_day,
+	vehicle_per_day_deliveries,
+	vehicle_checkin_count,
+	hd_avg_distance_to_customer,
+	hd_total_trips,
+	hd_total_km
+FROM
+	{{ source_db }}.{{ source_table }};

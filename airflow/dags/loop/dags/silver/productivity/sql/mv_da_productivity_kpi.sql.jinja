@@ -1,0 +1,29 @@
+{% set use_cluster = env in ['uat', 'prod'] %}
+
+CREATE MATERIALIZED VIEW {{ target_db }}.{{ target_view }}
+{% if use_cluster %}
+ON CLUSTER {{ target_cluster }}
+{% endif %}
+TO {{ target_db }}.{{ target_table }}
+AS
+SELECT
+	toDate(TRIM(JSONExtractString(event, 'activityDate'))) AS log_date,
+	TRIM(JSONExtractString(event, 'fcCode')) AS fc_code,
+	TRIM(JSONExtractString(event, 'fcName')) AS fc_name,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'distinctDas'))) AS distinct_das,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'distinctFullTimeDas'))) AS distinct_full_time_das,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'distinctPartTimeDas'))) AS distinct_part_time_das,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'distinctDCDDas'))) AS distinct_dcd,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'distinctDPDDas'))) AS distinct_dpd,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'hdDeliveredOrdersCount'))) AS hd_delivered_orders_count,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'hdFullTimeDeliveredOrdersCount'))) AS hd_full_time_delivered_orders_count,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'hdPartTimeDeliveredOrdersCount'))) AS hd_part_time_delivered_orders_count,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'hdDCDDeliveredOrdersCount'))) AS hd_dcd_delivered_orders_count,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'hdDPDDeliveredOrdersCount'))) AS hd_dpd_delivered_orders_count,
+	toFloat32OrZero(TRIM(JSONExtractString(event, 'hdDeliveredOrdersSalesValue'))) AS hd_delivered_orders_sales_value,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'hdTripAssignedToFullTimeDas'))) AS hd_trip_assigned_to_full_time_das,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'hdTripAssignedToPartTimeDas'))) AS hd_trip_assigned_to_part_time_das,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'hdTripAssignedToDCD'))) AS hd_trip_assigned_to_dcd,
+	toInt32OrZero(TRIM(JSONExtractString(event, 'hdTripAssignedToDPD'))) AS hd_trip_assigned_to_dpd
+FROM
+	{{ source_db }}.{{ source_table }};

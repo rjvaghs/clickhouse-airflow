@@ -1,0 +1,46 @@
+{% set use_s3 = env in ['dev'] %}
+
+INSERT INTO {{ bronze_db }}.{{ bronze_table }}
+SELECT
+    replaceRegexpAll(replace(_file, '.csv', ''), '[^a-zA-Z0-9]', '') AS batch_id,
+    toDate(
+    parseDateTimeOrNull(
+            concat(
+                lpad(splitByChar('-', extract(_file, '(\\d{1,2}-\\d{1,2}-\\d{4})'))[1], 2, '0'), '-',
+                lpad(splitByChar('-', extract(_file, '(\\d{1,2}-\\d{1,2}-\\d{4})'))[2], 2, '0'), '-',
+                splitByChar('-', extract(_file, '(\\d{1,2}-\\d{1,2}-\\d{4})'))[3]
+            ),
+            '%d-%m-%Y'
+        )
+    ) AS event_date,
+    now() AS created_ts       ,
+    '{{ dag_id }}' AS created_by,
+    `Shift Code` AS shift_code,
+    `Shift Description` AS shift_description,
+    `Alias` AS alias,
+    `Start Time` AS start_time,
+    `End Time` AS end_time
+FROM 
+{% if use_s3 %}
+    s3(
+        '{{ files_location }}', 'CSV',
+        '
+            `Shift Code` Nullable(String),
+            `Shift Description` Nullable(String),
+            `Alias` Nullable(String),
+            `Start Time` Nullable(String),
+            `End Time` Nullable(String)
+        '
+    )
+{% else %}
+url('{{ base_url }}{{ process_path }}/{{ file }}','CSV',
+    '
+        `Shift Code` Nullable(String),
+        `Shift Description` Nullable(String),
+        `Alias` Nullable(String),
+        `Start Time` Nullable(String),
+        `End Time` Nullable(String)
+    '
+    )
+{% endif %}
+SETTINGS input_format_defaults_for_omitted_fields = 1;

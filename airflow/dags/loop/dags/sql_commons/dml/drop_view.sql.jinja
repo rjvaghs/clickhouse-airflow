@@ -1,0 +1,7 @@
+{% set use_cluster = env in ['uat', 'prod'] %}
+
+DROP VIEW IF EXISTS {{ database }}.{{ view }} 
+{% if use_cluster %}
+ON CLUSTER {{ cluster }}
+{% endif %}
+;

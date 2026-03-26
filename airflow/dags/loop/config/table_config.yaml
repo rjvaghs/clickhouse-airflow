@@ -1,0 +1,104 @@
+databases:
+  audit:
+    storage_policy: audit_policy
+    tables:
+      dlq_failed_messages: ad_dlq_failed_messages
+      dag_watermarks: ad_dag_watermarks
+  bronze:
+    storage_policy: bronze_policy
+    tables:
+      employee_daily_attendance: bz_biomax_employee_daily_attendance
+      employee: bz_ramco_employee
+      employee_shift: bz_ramco_employee_shift
+      enterprise_employee: bz_enterprise_employee
+      da_productivity: bz_da_productivity
+      fc_productivity: bz_fc_productivity
+      vehicle_productivity: bz_vehicle_productivity
+      shopper_productivity: bz_shopper_productivity
+      resource_productivity: bz_resource_productivity_pc
+      resource_level_productivity: bz_resource_level_productivity
+      region: bz_region
+    local_tables:
+      employee_daily_attendance: bz_biomax_employee_daily_attendance_local
+      employee: bz_ramco_employee_local
+      employee_shift: bz_ramco_employee_shift_local
+      enterprise_employee: bz_enterprise_employee_local
+      da_productivity: bz_da_productivity_local
+      fc_productivity: bz_fc_productivity_local
+      vehicle_productivity: bz_vehicle_productivity_local
+      shopper_productivity: bz_shopper_productivity_local
+      resource_productivity: bz_resource_productivity_pc_local
+      resource_level_productivity: bz_resource_level_productivity_local
+      region: bz_region_local
+  silver:
+    storage_policy: silver_policy
+    tables:
+      employee_daily_attendance: sz_employee_daily_attendance
+      employee: sz_employee
+      employee_shift: sz_employee_shift
+      enterprise_employee: sz_enterprise_employee
+      da_productivity: sz_da_productivity
+      fc_productivity: sz_fc_productivity
+      vehicle_productivity: sz_vehicle_productivity
+      shopper_productivity: sz_shopper_productivity
+      resource_productivity: sz_resource_productivity_pc
+      resource_level_productivity: sz_resource_level_productivity
+      region: sz_region
+    local_tables:
+      employee_daily_attendance: sz_employee_daily_attendance_local
+      employee: sz_employee_local
+      employee_shift: sz_employee_shift_local
+      enterprise_employee: sz_enterprise_employee_local
+      da_productivity: sz_da_productivity_local
+      fc_productivity: sz_fc_productivity_local
+      vehicle_productivity: sz_vehicle_productivity_local
+      shopper_productivity: sz_shopper_productivity_local
+      resource_productivity: sz_resource_productivity_pc_local
+      resource_level_productivity: sz_resource_level_productivity_local
+      region: sz_region_local
+    views:
+      da_productivity: sz_da_productivity_mv
+      fc_productivity: sz_fc_productivity_mv
+      vehicle_productivity: sz_vehicle_productivity_mv
+      shopper_productivity: sz_shopper_productivity_mv
+      resource_productivity: sz_resource_productivity_pc_mv
+      resource_level_productivity: sz_resource_level_productivity_mv
+      region: sz_region_mv
+      enterprise_employee: sz_enterprise_employee_mv
+  gz_loop:
+    storage_policy: gz_loop_policy
+    tables:
+      employee_attendance_summary: gz_employee_attendance_summary_kpi
+      da_productivity: gz_da_productivity_kpi
+      fc_productivity: gz_fc_productivity_kpi
+      vehicle_productivity: gz_vehicle_productivity_kpi
+      shopper_productivity: gz_shopper_productivity_kpi
+      resource_productivity: gz_resource_productivity_pc_kpi
+      input_dashboard: gz_input_dashboard_kpi
+      output_dashboard: gz_output_dashboard_kpi
+      region: gz_region
+      resource_trends: gz_resource_trends_kpi
+      fc_operations: gz_fc_operational_trends_kpi
+    local_tables:
+      employee_attendance_summary: gz_employee_attendance_summary_kpi_local
+      da_productivity: gz_da_productivity_kpi_local
+      fc_productivity: gz_fc_productivity_kpi_local
+      vehicle_productivity: gz_vehicle_productivity_kpi_local
+      shopper_productivity: gz_shopper_productivity_kpi_local
+      resource_productivity: gz_resource_productivity_pc_kpi_local
+      input_dashboard: gz_input_dashboard_kpi_local
+      output_dashboard: gz_output_dashboard_kpi_local
+      resource_trends: gz_resource_trends_kpi_local
+      fc_operations: gz_fc_operational_trends_kpi_local
+    views:
+      employee_attendance_summary: gz_employee_attendance_summary_kpi_mv
+      da_productivity: gz_da_productivity_kpi_mv
+      fc_productivity: gz_fc_productivity_kpi_mv
+      vehicle_productivity: gz_vehicle_productivity_kpi_mv
+      shopper_productivity: gz_shopper_productivity_kpi_mv
+      resource_productivity: gz_resource_productivity_pc_kpi_mv
+      input_dashboard: gz_input_dashboard_kpi_mv
+      output_dashboard: gz_output_dashboard_kpi_mv
+      resource_trends: gz_resource_trends_kpi_mv
+
+

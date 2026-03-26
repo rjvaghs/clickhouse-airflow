@@ -1,0 +1,80 @@
+INSERT INTO {{ silver_db }}.{{ silver_target_table }}
+(
+    batch_id,
+    created_by,
+    created_ts,
+    employee_id,
+    job_type,
+    role,
+    fc_code,
+    log_date,
+    log_in_time,
+    log_out_time,
+    is_present,
+    is_active,
+    on_leave
+)
+SETTINGS distributed_product_mode = 'global'
+WITH dates AS (
+    SELECT DISTINCT
+        toDate(parseDateTimeBestEffortOrNull(TRIM(LogDate))) AS log_date,
+        batch_id
+    FROM
+        {{ bronze_db }}.{{ bronze_source_table }}
+    WHERE log_date BETWEEN toDate(parseDateTimeBestEffortOrNull('{{ event_date_from }}')) AND toDate(parseDateTimeBestEffortOrNull('{{ event_date_to }}'))
+    ORDER BY log_date
+),
+latest_bronze AS (
+    SELECT
+        EmployeeCode AS employee_id,
+        toDate(parseDateTimeBestEffortOrNull(TRIM(LogDate))) AS log_date,
+        min(subtractMinutes(
+                subtractHours(parseDateTimeBestEffortOrNull((concat(toString(TRIM(LogDate)), ' ', toString(TRIM(LogTime))))), 5),
+                30
+            )
+        ) AS log_in_time,
+        max(subtractMinutes(
+                subtractHours(parseDateTimeBestEffortOrNull((concat(toString(TRIM(LogDate)), ' ', toString(TRIM(LogTime))))), 5),
+                30
+            )
+        ) AS log_out_time
+    FROM {{ bronze_db }}.{{ bronze_source_table }}
+    WHERE log_date BETWEEN toDate(parseDateTimeBestEffortOrNull('{{ event_date_from }}')) AND toDate(parseDateTimeBestEffortOrNull('{{ event_date_to }}'))
+    GROUP BY employee_id, log_date
+),
+
+sz_employee AS (
+    SELECT
+        employee_id,
+        argMax(joining_date, event_date) AS joining_date,
+        argMax(last_working_date, event_date) AS last_working_date,
+        argMax(fc_code, event_date) AS fc_code,
+        argMax(job_type, event_date) AS job_type,
+        argMax(role, event_date) AS role
+    FROM {{ silver_db }}.{{ silver_source_table }}
+    GROUP BY employee_id
+    HAVING role IN ('DA', 'Shopper', 'Refiller', 'Loader')
+)
+
+SELECT
+    d.batch_id AS batch_id,                          
+    '{{ dag_id }}' AS created_by,
+    now64(3) AS created_ts,
+    e.employee_id AS employee_id,
+    e.job_type AS job_type,
+    e.role AS role,
+    e.fc_code AS fc_code,
+    d.log_date AS log_date,
+    b.log_in_time AS log_in_time,
+    b.log_out_time AS log_out_time,
+    if(b.log_in_time IS NULL, 0, 1) AS is_present,
+    CASE WHEN log_date >= e.joining_date AND log_date <= e.last_working_date THEN 1 
+         WHEN e.last_working_date IS NULL THEN 1 
+         ELSE 0
+    END AS is_active,
+    if(b.log_in_time IS NULL, 1, 0) AS on_leave
+FROM sz_employee e
+CROSS JOIN dates d
+LEFT JOIN latest_bronze b
+    ON e.employee_id = b.employee_id
+   AND d.log_date = b.log_date;

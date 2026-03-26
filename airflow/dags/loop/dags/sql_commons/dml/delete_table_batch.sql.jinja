@@ -1,0 +1,16 @@
+{% set use_cluster = env in ['uat', 'prod'] %}
+
+{% if batch_ids %}
+ALTER TABLE {{ db }}.{{ table }}
+{% if use_cluster %}
+ON CLUSTER {{ cluster }}
+{% endif %}
+DELETE WHERE batch_id IN (
+    {% for id in batch_ids %}
+        '{{ id }}'{% if not loop.last %}, {% endif %}
+    {% endfor %}
+);
+{% else %}
+-- No batch_id provided; skip delete to avoid ClickHouse errors
+SELECT 'No batch_id provided, skipping delete' AS info;
+{% endif %}

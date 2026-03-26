@@ -1,0 +1,13 @@
+<clickhouse>
+    <remote_servers>
+        <dev>
+            <shard>
+                <replica>
+                    <host>clickhouse</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </dev>
+    </remote_servers>
+    <allow_replacing_macros_with_environment_variables>1</allow_replacing_macros_with_environment_variables>
+</clickhouse>

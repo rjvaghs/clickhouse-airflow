@@ -1,0 +1,22 @@
+{% set use_cluster = env in ['uat', 'prod'] %}
+
+CREATE MATERIALIZED VIEW {{ gold_db }}.{{ gold_view }}
+{% if use_cluster %}
+ON CLUSTER {{ target_cluster }}
+{% endif %}
+TO {{ gold_db }}.{{ gold_table }}
+AS
+SELECT 
+	log_date,
+	fc_code,
+	role,
+	job_type,
+	count(is_active) AS active,
+	countIf(is_present = 1) AS present,
+	countIf(is_active = 1) - countIf(is_present = 1) AS absent,
+	countIf(on_leave = 1) AS on_leave
+FROM
+	{{ silver_db }}.{{ silver_table }}
+WHERE is_active = 1
+GROUP BY
+	log_date, fc_code, role, job_type;

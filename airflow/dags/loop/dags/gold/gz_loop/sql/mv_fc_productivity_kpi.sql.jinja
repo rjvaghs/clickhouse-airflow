@@ -1,0 +1,33 @@
+{% set use_cluster = env in ['uat', 'prod'] %}
+
+CREATE MATERIALIZED VIEW {{ target_db }}.{{ target_view }}
+{% if use_cluster %}
+ON CLUSTER {{ target_cluster }}
+{% endif %}
+TO {{ target_db }}.{{ target_table }}
+AS
+SELECT
+	fc_code,
+	fc_name,
+	log_date,
+	delivered_shipments_volume,
+	delivered_shipments_value,
+	hd_delivered_shipments_volume,
+	hd_delivered_shipments_value,
+	pup_delivered_shipments_volume,
+	pup_delivered_shipments_value,
+	hd_on_time_delivered_shipments,
+	hd_late_shipments,
+	hd_set_capacity,
+	hd_consumed_capacity,
+	hd_open_shipments_percentage,
+	hd_total_slots,
+	hd_adj_ds,
+	hd_adj_ds_cds,
+	pup_set_capacity,
+	pup_consumed_capacity,
+	pup_on_time,
+	total_pup_orders_count,
+	total_hd_orders_count
+FROM
+	{{ source_db }}.{{ source_table }};

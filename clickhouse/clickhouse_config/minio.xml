@@ -1,0 +1,10 @@
+<clickhouse>
+    <s3>
+        <minio>
+            <endpoint from_env="MINIO_BASE_URL"/>
+            <access_key_id from_env="MINIO_ACCESS_KEY"/>
+            <secret_access_key from_env="MINIO_SECRET_KEY"/>
+            <use_environment_credentials>false</use_environment_credentials>
+        </minio>
+    </s3>
+</clickhouse>

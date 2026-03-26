@@ -1,0 +1,77 @@
+INSERT INTO {{ silver_db }}.{{ silver_table }}
+(
+	batch_id,
+	event_date,
+   	employee_id,
+    created_by,
+    created_ts,
+    updated_by,
+	updated_ts,
+    joining_date,
+    full_name,
+    dob,
+    gender,
+    fc_code,
+	job_type,
+	role,
+    city,
+    state,
+    old_employee_id,
+    sub_loc,
+    last_working_date,
+    is_active,
+	ramco_id,
+	enterprise_id
+)
+SETTINGS distributed_product_mode = 'global'
+SELECT 
+	b.batch_id AS batch_id,
+	b.event_date,
+	TRIM(b.employee_code) AS employee_id,
+	'{{ dag_id }}' AS created_by,
+	COALESCE(s.created_ts, now()) AS created_ts,
+	'{{ dag_id }}' AS updated_by,
+	now64() AS updated_ts,
+	toDate(parseDateTimeBestEffortOrNull(TRIM(b.date_of_join))) AS joining_date,
+	CASE WHEN b.employee_l_name IS NULL THEN TRIM(b.employee_f_name)
+	ELSE CONCAT(toString(TRIM(b.employee_f_name)), ' ', toString(TRIM(b.employee_l_name))) END AS full_name,
+	toDate(parseDateTimeBestEffortOrNull(TRIM(b.date_of_birth))) as dob,
+	TRIM(b.gender),
+	TRIM(b.hrwrkloc) AS fc_code,
+	CASE
+		WHEN TRIM(b.emp_type_code) = 'FT' THEN 'FT'
+		WHEN TRIM(b.emp_type_code) = 'CPT1' THEN 'PT'
+		ELSE NULL END AS job_type,
+	CASE 
+		WHEN TRIM(b.designation) = '90002' OR TRIM(b.designation) = '90021' THEN 'Loader'
+		WHEN TRIM(b.designation) = '90027' OR TRIM(b.designation) = '90030' THEN 'Refiller'
+		WHEN TRIM(b.designation) = '90003' OR TRIM(b.designation) = '90018' THEN 'Shopper'
+		WHEN TRIM(b.designation) = '90001' OR TRIM(b.designation) = '90016' OR TRIM(b.designation) = '90017' THEN 'DA'
+		ELSE NULL END AS role,
+	TRIM(b.city),
+	TRIM(b.state),
+	TRIM(b.old_emp_code) AS old_employee_id,
+	TRIM(b.sub_loc),
+	toDate(parseDateTimeBestEffortOrNull(TRIM(b.last_available_date))) AS last_working_date,
+	CASE 
+		WHEN TRIM(b.active) = 'Y' THEN 1 
+		WHEN TRIM(b.active) = 'N' THEN 0
+		ELSE NULL END AS is_active,
+	CASE
+        WHEN startsWith(employee_id, 'M') THEN NULL
+		ELSE employee_id END AS ramco_id,
+	CASE
+        WHEN startsWith(employee_id, 'M') THEN employee_id
+		ELSE NULL END AS enterprise_id
+FROM
+	{{ bronze_db }}.{{ bronze_table }} b
+LEFT JOIN (
+	SELECT 
+		employee_id, 
+		argMax(created_ts, event_date) AS created_ts
+	FROM {{ silver_db }}.{{ silver_table }}
+	GROUP BY 
+		employee_id
+) s ON
+	b.employee_code = s.employee_id
+WHERE b.employee_code IS NOT NULL AND b.event_date BETWEEN '{{ event_date_from }}' AND '{{ event_date_to }}';

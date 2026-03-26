@@ -1,0 +1,5 @@
+FROM apache/airflow:3.0.6
+
+# Install Python packages
+COPY /airflow/requirements.txt /opt/airflow/requirements.txt
+RUN pip install --no-cache-dir -r /opt/airflow/requirements.txt

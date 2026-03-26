@@ -1,0 +1,32 @@
+{% set use_cluster = env in ['uat', 'prod'] %}
+
+CREATE MATERIALIZED VIEW {{ target_db }}.{{ target_view }}
+{% if use_cluster %}
+ON CLUSTER {{ target_cluster }}
+{% endif %}
+TO {{ target_db }}.{{ target_table }}
+AS
+SELECT
+	toDate(JSONExtractString(event, 'activityDate')) AS log_date,
+	JSONExtractString(event, 'fcCode') AS fc_code,
+	JSONExtractString(event, 'fcName') AS fc_name,
+	toInt32OrZero(JSONExtractString(event, 'distinctShoppers')) AS distinct_shoppers,
+	toInt32OrZero(JSONExtractString(event, 'distinctFullTimeShoppers')) AS distinct_full_time_shoppers,
+	toInt32OrZero(JSONExtractString(event, 'distinctPartTimeShoppers')) AS distinct_part_time_shoppers,
+	toInt32OrZero(JSONExtractString(event, 'distinctRegularPickShoppers')) AS distinct_regular_pick_shoppers,
+	toInt32OrZero(JSONExtractString(event, 'distinctRegularPickFullTimeShoppers')) AS distinct_regular_pick_full_time_shoppers,
+	toInt32OrZero(JSONExtractString(event, 'distinctRegularPickPartTimeShoppers')) AS distinct_regular_pick_part_time_shoppers ,
+  	toInt32OrZero(JSONExtractString(event, 'distinctGroupPickShoppers')) AS distinct_group_pick_shoppers,
+	toInt32OrZero(JSONExtractString(event, 'regularPickPackedCount')) AS regular_pick_packed_count,
+	toInt32OrZero(JSONExtractString(event, 'groupPickPackedCount')) AS group_pick_packed_count,
+	toInt32OrZero(JSONExtractString(event, 'itemsPackedCount')) AS items_packed_count,
+	toInt32OrZero(JSONExtractString(event, 'itemsQtyPackedCount')) AS items_qty_packed_count,
+	toInt32OrZero(JSONExtractString(event, 'itemsPackedCountFullTime')) AS items_packed_count_full_time,
+	toInt32OrZero(JSONExtractString(event, 'itemsPackedCountPartTime')) AS items_packed_count_part_time,
+	toInt32OrZero(JSONExtractString(event, 'itemsQtyPackedCountFullTime')) AS items_qty_packed_count_full_time,
+	toInt32OrZero(JSONExtractString(event, 'itemsQtyPackedCountPartTime')) AS items_qty_packed_count_part_time,
+	toInt32OrZero(JSONExtractString(event, 'totalPwpCycleTime')) AS total_cycle_time,
+	toInt32OrZero(JSONExtractString(event, 'depositedOrdersCount')) AS deposited_orders_count,
+	toInt32OrZero(JSONExtractString(event, 'depositedOrdersSalesValue')) AS deposited_sales_value
+FROM
+	{{ source_db }}.{{ source_table }};

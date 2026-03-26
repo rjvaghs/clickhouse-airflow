@@ -1,0 +1,200 @@
+INSERT INTO {{ target_db }}.{{ target_table }}
+(
+    fc_code,
+    city,
+    state,
+    region,
+    log_date,
+    hd_committed_capacity,
+    hd_set_capacity,
+    hd_consumed_capacity,
+    hd_delivered_shipments_volume,
+    hd_on_time,
+    hd_open_shipments_percentage,
+    hd_late_shipments,
+    hd_total_slots,
+    hd_adj_ds,
+    hd_adj_ds_cds,
+    pup_committed_capacity,
+    pup_set_capacity,
+    pup_consumed_capacity,
+    pup_picked_up_shipment_count,
+    pup_on_time,
+    total_pup_orders_count,
+	total_hd_orders_count,
+    hd_avg_distance_to_customer
+) 
+WITH
+{% if log_dates is defined and log_dates %}
+log_dates_filter AS (
+    SELECT toDate(d) AS log_date
+    FROM (
+        SELECT arrayJoin([
+            {% for d in log_dates %}
+            '{{ d }}'{% if not loop.last %}, {% endif %}
+            {% endfor %}
+        ]) AS d
+    )
+),
+log_months_filter AS (
+    SELECT DISTINCT toStartOfMonth(log_date) AS month_year
+    FROM log_dates_filter
+),
+{% endif %}
+fc_productivity AS
+(
+SELECT
+            fc_code,
+            log_date,
+            argMax(hd_set_capacity,
+ created_ts) AS hd_set_capacity,
+            argMax(hd_consumed_capacity,
+ created_ts) AS hd_consumed_capacity,
+            argMax(hd_delivered_shipments_volume,
+ created_ts) AS hd_delivered_shipments_volume,
+            argMax(hd_on_time_delivered_shipments,
+ created_ts) AS hd_on_time_delivered_shipments,
+            argMax(hd_open_shipments_percentage,
+ created_ts) AS hd_open_shipments_percentage,
+            argMax(hd_late_shipments,
+ created_ts) AS hd_late_shipments,
+            argMax(hd_total_slots,
+ created_ts) AS hd_total_slots,
+            argMax(hd_adj_ds,
+ created_ts) AS hd_adj_ds,
+            argMax(hd_adj_ds_cds,
+ created_ts) AS hd_adj_ds_cds,
+            argMax(pup_set_capacity,
+ created_ts) AS pup_set_capacity,
+            argMax(pup_consumed_capacity,
+ created_ts) AS pup_consumed_capacity,
+            argMax(pup_delivered_shipments_volume,
+ created_ts) AS pup_picked_up_shipment_count,
+            argMax(pup_on_time,
+ created_ts) AS pup_on_time,
+            argMax(total_pup_orders_count,
+ created_ts) AS total_pup_orders_count,
+            argMax(total_hd_orders_count,
+ created_ts) AS total_hd_orders_count
+        FROM {{ source_db }}.{{ source_table_fc_productivity }}
+        {% if log_dates is defined and log_dates %}
+        WHERE log_date IN (SELECT log_date FROM log_dates_filter)
+        {% endif %}
+        GROUP BY
+            log_date,
+            fc_code
+    ),
+    vehicle_productivity AS
+    (
+        SELECT
+            fc_code,
+            log_date,
+            argMax(hd_total_trips, created_ts) AS hd_total_trips,
+            argMax(hd_total_km, created_ts) AS hd_total_km
+        FROM {{ source_db }}.{{ source_table_vehicle_productivity }}
+        {% if log_dates is defined and log_dates %}
+        WHERE log_date IN (SELECT log_date FROM log_dates_filter)
+        {% endif %}
+        GROUP BY
+            log_date,
+            fc_code,
+            fc_name,
+            vehicle_type
+    ),
+    avg_vehicle_productivity AS
+    (
+        SELECT
+            fc_code,
+            log_date,
+            ROUND((SUM(hd_total_km)/SUM(hd_total_trips))/2) AS hd_avg_distance_to_customer
+        FROM vehicle_productivity
+        GROUP BY fc_code, log_date
+    ),
+    region AS
+    (
+        SELECT
+            argMax(region,
+ created_ts) AS region,
+            argMax(state,
+ created_ts) AS state,
+            argMax(city,
+ created_ts) AS city,
+            fc_code
+        FROM {{ source_db }}.{{ source_table_region }}
+        GROUP BY fc_code
+    ),
+    resource_productivity_hd AS
+    (
+        SELECT
+            fc_code,
+            month_year,
+            argMax(da_full_time, created_ts) AS hd_committed_capacity
+        FROM {{ source_db }}.{{ source_table_resource_productivity_pc }}
+        WHERE category_id = 3 AND label_id = 7
+        {% if log_dates is defined and log_dates %}
+        AND month_year IN (SELECT month_year FROM log_months_filter)
+        {% endif %}
+        GROUP BY
+            fc_code,
+            month_year,
+            category_id, 
+            label_id
+    ),
+    resource_productivity_pup AS
+    (
+        SELECT
+            fc_code,
+            month_year,
+            argMax(da_full_time, created_ts) AS pup_committed_capacity
+        FROM {{ source_db }}.{{ source_table_resource_productivity_pc }}
+        WHERE category_id = 3 AND label_id = 8
+        {% if log_dates is defined and log_dates %}
+        AND month_year IN (SELECT month_year FROM log_months_filter)
+        {% endif %}
+        GROUP BY
+            fc_code,
+            month_year,
+            category_id, 
+            label_id
+    ),
+    output_dashboard AS
+    (
+        SELECT
+            fp.fc_code AS fc_code,
+            r.city AS city,
+            r.state AS state,
+            r.region AS region,
+            fp.log_date AS log_date,
+            rp_hd.hd_committed_capacity AS hd_committed_capacity,
+            fp.hd_set_capacity AS hd_set_capacity,
+            fp.hd_consumed_capacity AS hd_consumed_capacity,
+            fp.hd_delivered_shipments_volume AS hd_delivered_shipments_volume,
+            CASE WHEN fp.total_hd_orders_count != 0 THEN ROUND(((fp.hd_on_time_delivered_shipments/fp.total_hd_orders_count)*100)) ELSE 0 END AS hd_on_time,
+            fp.hd_open_shipments_percentage AS hd_open_shipments_percentage,
+            toFloat64(
+			    ifNull(
+			        round(
+			            (fp.hd_late_shipments / NULLIF(fp.hd_delivered_shipments_volume, 0)) * 100
+			        ),
+			        0
+			    )
+			) AS hd_late_shipments,
+            fp.hd_total_slots AS hd_total_slots,
+            fp.hd_adj_ds AS hd_adj_ds,
+            fp.hd_adj_ds_cds AS hd_adj_ds_cds,
+            rp_pup.pup_committed_capacity AS pup_committed_capacity,
+            fp.pup_set_capacity AS pup_set_capacity,
+            fp.pup_consumed_capacity AS pup_consumed_capacity,
+            fp.pup_picked_up_shipment_count AS pup_picked_up_shipment_count,
+            CASE WHEN fp.total_pup_orders_count != 0 THEN ROUND(((fp.pup_on_time/fp.total_pup_orders_count)*100)) ELSE 0 END AS pup_on_time,
+            fp.total_pup_orders_count AS total_pup_orders_count,
+            fp.total_hd_orders_count AS total_hd_orders_count,
+            vp.hd_avg_distance_to_customer AS hd_avg_distance_to_customer
+            
+        FROM fc_productivity AS fp
+        LEFT JOIN region AS r ON fp.fc_code = r.fc_code
+        LEFT JOIN resource_productivity_hd AS rp_hd ON (fp.fc_code = rp_hd.fc_code) AND (toStartOfMonth(fp.log_date) = toDate(rp_hd.month_year))
+        LEFT JOIN resource_productivity_pup AS rp_pup ON (fp.fc_code = rp_pup.fc_code) AND (toStartOfMonth(fp.log_date) = toDate(rp_pup.month_year))
+        LEFT JOIN avg_vehicle_productivity AS vp ON (fp.fc_code = vp.fc_code) AND (fp.log_date = vp.log_date)
+    )
+SELECT DISTINCT * FROM output_dashboard;

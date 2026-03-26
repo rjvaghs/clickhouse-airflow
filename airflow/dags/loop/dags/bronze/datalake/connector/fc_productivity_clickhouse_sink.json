@@ -1,0 +1,26 @@
+{
+    "name": "fc_productivity_clickhouse_sink",
+    "config": {
+        "connector.class": "com.clickhouse.kafka.connect.ClickHouseSinkConnector",
+        "tasks.max": "1",
+        "topics": "cntdl.datamart.fcproductivity",
+        "hostname": "clickhouse",
+        "port": "8123",
+        "database": "bronze",
+        "username": "default",
+        "password": "admin",
+        "table": "bz_fc_productivity",
+        "topic2TableMap": "cntdl.datamart.fcproductivity = bz_fc_productivity",
+        "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+        "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+        "key.converter.schemas.enable": "false",
+        "value.converter.schemas.enable": "false",
+        "insert.mode": "insert",
+        "batch.size": "1000",
+        "buffer.flush.time": "5000",
+        "timeout": "30000",
+        "errors.tolerance": "all",
+        "errors.log.enable": "true",
+        "errors.log.include.messages": "true"
+    }
+}

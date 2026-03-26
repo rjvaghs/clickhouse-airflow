@@ -1,0 +1,8 @@
+# Log file
+*.log
+__pycache__/
+*.pyc
+.idea/
+airflow/logs/
+kafka-connect/clickhouse-kafka-connect-v1.3.3-confluent.jar
+

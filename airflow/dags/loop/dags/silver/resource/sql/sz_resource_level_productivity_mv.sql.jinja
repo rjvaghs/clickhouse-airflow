@@ -1,0 +1,18 @@
+{% set use_cluster = env in ['uat', 'prod'] %}
+
+CREATE MATERIALIZED VIEW {{ target_db }}.{{ target_view }}
+{% if use_cluster %}
+ON CLUSTER {{ target_cluster }}
+{% endif %}
+TO {{ target_db }}.{{ target_table }}
+AS
+SELECT
+    toDateTime(TRIM(JSONExtractString(event, 'logDate'))) AS log_date,
+    TRIM(JSONExtractString(event, 'fcCode')) AS fc_code,
+    TRIM(JSONExtractString(event, 'resourceType')) AS resource_type,
+    TRIM(JSONExtractString(event, 'jobType')) AS job_type,
+    TRIM(JSONExtractString(event, 'id')) AS id,
+    toInt32OrZero(TRIM(JSONExtractString(event, 'productivityCount'))) AS productivity_count,
+    TRIM(JSONExtractString(event, 'entityId')) AS entity_id,
+    parseDateTimeBestEffortOrNull(TRIM(eventTS)) AS event_ts
+FROM {{ source_db }}.{{ source_table }};

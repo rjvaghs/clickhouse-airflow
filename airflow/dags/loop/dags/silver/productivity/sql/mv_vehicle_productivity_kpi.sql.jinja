@@ -1,0 +1,25 @@
+{% set use_cluster = env in ['uat', 'prod'] %}
+
+CREATE MATERIALIZED VIEW {{ target_db }}.{{ target_view }}
+{% if use_cluster %}
+ON CLUSTER {{ target_cluster }}
+{% endif %}
+TO {{ target_db }}.{{ target_table }}
+AS
+SELECT
+	toDate(parseDateTimeBestEffort(JSONExtractString(event, 'activityDate'))) AS log_date,
+	JSONExtractString(event, 'fcCode') AS fc_code,
+	JSONExtractString(event, 'fcName') AS fc_name,
+	JSONExtractString(event, 'vehicleType') AS vehicle_type,
+	toFloat32OrZero(JSONExtractString(event, 'plannedOrders')) AS planned_orders,
+	toFloat32OrZero(JSONExtractString(event, 'noOfVehicles')) AS no_of_vehicles,
+	toInt32OrZero(JSONExtractString(event, 'tripsCount')) AS trips_count,
+	toFloat32OrZero(JSONExtractString(event, 'tripsPerVehicleCount')) AS trips_per_vehicle_count,
+	toInt32OrZero(JSONExtractString(event, 'allVehiclePerDay')) AS all_vehicle_per_day,
+	toFloat32OrZero(JSONExtractString(event, 'vehiclePerDayDeliveries')) AS vehicle_per_day_deliveries,
+	toFloat32OrZero(JSONExtractString(event, 'hdAverageDistanceToCustomer')) AS hd_avg_distance_to_customer,
+	toFloat32OrZero(JSONExtractString(event, 'vehicleCheckInCount')) AS vehicle_checkin_count,
+	toUInt32OrZero(JSONExtractString(event, 'hdTotalTrips')) AS hd_total_trips,
+	toFloat32OrZero(JSONExtractString(event, 'hdTotalKm')) AS hd_total_km
+FROM
+	{{ source_db }}.{{ source_table }};
